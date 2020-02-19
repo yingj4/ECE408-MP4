@@ -45,14 +45,14 @@ __global__ void conv3d(float *input, float *output, const int z_size,
     Nc[tz][ty][tx] = input[startX + startY * x_size + startZ * x_size * y_size];
   }
   else {
-    Nc[tz][ty][tx] = 0;
+    Nc[tz][ty][tx] = 0.0f;
   }
   __syncthreads();
   
   if (tx < TILE_SIZE && ty < TILE_SIZE && tz < TILE_SIZE) {
-    for (int i = 0; i < MASK_WIDTH; ++i) {
+    for (int k = 0; k < MASK_WIDTH; ++k) {
       for (int j = 0; j < MASK_WIDTH; ++j) {
-        for (int k = 0; k < MASK_WIDTH; ++k) {
+        for (int i = 0; i < MASK_WIDTH; ++i) {
           Pvalue += Mc[k][j][i] * Nc[tz + k][ty + j][tx + i];
         }
       }
@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
   wbTime_start(Compute, "Doing the computation on the GPU");
   //@@ Initialize grid and block dimensions here
   dim3 dimGrid(ceil(x_size * 1.0 / TILE_SIZE), ceil(y_size * 1.0 / TILE_SIZE), ceil(z_size * 1.0 / TILE_SIZE));
-  dim3 dimBlock(TILE_SIZE, TILE_SIZE, TILE_SIZE);
+  dim3 dimBlock(SHARE_SIZE, SHARE_SIZE, SHARE_SIZE);
   //@@ Launch the GPU kernel here
   conv3d<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, z_size, y_size, x_size);
   
