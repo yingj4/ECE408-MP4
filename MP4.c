@@ -29,13 +29,13 @@ __global__ void conv3d(float *input, float *output, const int z_size,
   int ty = threadIdx.y;
   int tz = threadIdx.z;
   
-  __shared__ Nc[SHARE_SIZE][SHARE_SIZE][SHARE_SIZE];
+  __shared__ float Nc[SHARE_SIZE][SHARE_SIZE][SHARE_SIZE];
   
-  float Pvalue = 0;
+  float Pvalue = 0.0f;
   
-  int outX = bx * TILE_WIDTH + tx;
-  int outY = by * TILE_WIDTH + ty;
-  int outZ = bz * TILE_WIDTH + tz;
+  int outX = bx * TILE_SIZE + tx;
+  int outY = by * TILE_SIZE + ty;
+  int outZ = bz * TILE_SIZE + tz;
   
   int startX = outX - MASK_RADIUS;
   int startY = outY - MASK_RADIUS;
@@ -47,8 +47,21 @@ __global__ void conv3d(float *input, float *output, const int z_size,
   else {
     Nc[tz][ty][tx] = 0;
   }
+  __syncthreads();
   
-  
+  if (tx < TILE_SIZE && ty < TILE_SIZE && tz < TILE_SIZE) {
+    for (int i = 0; i < MASK_WIDTH; ++i) {
+      for (int j = 0; j < MASK_WIDTH; ++j) {
+        for (int k = 0; k < MASK_WIDTH; ++k) {
+          Pvalue += Mc[k][j][i] * Nc[tz + k][ty + j][tx + i];
+        }
+      }
+    }
+    
+    if (outX < x_size && outY < y_size && outZ < z_size) {
+      output[outX + outY * x_size + outZ * x_size * y_size] = Pvalue;
+    }
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -96,13 +109,13 @@ int main(int argc, char *argv[]) {
   // do
   // not need to be copied to the gpu
   cudaMemcpy(deviceInput, (hostInput + 3), (inputLength - 3) * sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(deviceKernel, hostKernel, kernelLength * sizeof(float));
+  cudaMemcpyToSymbol(Mc, hostKernel, kernelLength * sizeof(float));
   wbTime_stop(Copy, "Copying data to the GPU");
 
   wbTime_start(Compute, "Doing the computation on the GPU");
   //@@ Initialize grid and block dimensions here
-  dim3 dimGrid(ceil(x_size * 1.0 / TILE_WIDTH), ceil(y_size * 1.0 / TILE_WIDTH), ceil(z_size * 1.0 / TILE_WIDTH));
-  dim3 dimBlock(TILE_WIDTH, TILE_WIDTH, TILE_WIDTH);
+  dim3 dimGrid(ceil(x_size * 1.0 / TILE_SIZE), ceil(y_size * 1.0 / TILE_SIZE), ceil(z_size * 1.0 / TILE_SIZE));
+  dim3 dimBlock(TILE_SIZE, TILE_SIZE, TILE_SIZE);
   //@@ Launch the GPU kernel here
   conv3d<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, z_size, y_size, x_size);
   
